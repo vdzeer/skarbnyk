@@ -1,0 +1,1 @@
+export { RecoveryKeyCard } from './RecoveryKeyCard'

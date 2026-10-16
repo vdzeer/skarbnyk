@@ -1,0 +1,1 @@
+export { YearIncome } from './YearIncome'

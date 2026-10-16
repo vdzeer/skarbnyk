@@ -1,0 +1,20 @@
+{
+  "name": "skarbnyk-rules-tests",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "description": "Firestore security rules unit tests, run against the Firebase emulator",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project demo-skarbnyk --config ../firebase.json \"jest --runInBand\"",
+    "emulators": "firebase emulators:start --only auth,firestore --project demo-skarbnyk --config ../firebase.json"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "6.0.0",
+    "firebase": "13.0.0",
+    "firebase-tools": "15.33.0",
+    "jest": "30.5.2"
+  }
+}

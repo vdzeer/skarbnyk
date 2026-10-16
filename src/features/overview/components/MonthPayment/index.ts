@@ -1,0 +1,1 @@
+export { MonthPayment } from './MonthPayment'

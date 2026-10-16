@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Read-only token: the jobs only check out, install and test. No secrets.
+# Actions are pinned to commit SHAs; the comment names the release.
+permissions:
+  contents: read
+
+jobs:
+  app:
+    name: Lint, test and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      # The static export is what gets deployed. It needs no Firebase config:
+      # the clients are created in the browser, never during the build.
+      - name: Build
+        run: npm run build
+
+  rules:
+    name: Firestore rules
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: rules-tests/package-lock.json
+
+      # The Firestore emulator is a Java process and firebase-tools@15 refuses
+      # to start on anything older than Java 21. This is why the rules suite is
+      # its own job: the lint/test job above must not depend on a JDK.
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Its own workspace, its own lockfile: `@firebase/rules-unit-testing`
+      # and `firebase-tools` never enter the app's manifest.
+      - name: Install rules-test dependencies
+        run: npm ci
+        working-directory: rules-tests
+
+      - name: Rules unit tests
+        run: npm test
+        working-directory: rules-tests
