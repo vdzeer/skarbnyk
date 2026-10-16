@@ -1,5 +1,9 @@
 # Skarbnyk (Скарбник)
 
+[![CI](https://github.com/vdzeer/skarbnyk/actions/workflows/ci.yml/badge.svg)](https://github.com/vdzeer/skarbnyk/actions/workflows/ci.yml)
+[![skarbnyk.web.app](https://img.shields.io/website?url=https%3A%2F%2Fskarbnyk.web.app&label=skarbnyk.web.app)](https://skarbnyk.web.app)
+[![License: MIT](https://img.shields.io/github/license/vdzeer/skarbnyk)](https://github.com/vdzeer/skarbnyk/blob/main/LICENSE)
+
 A web app for Ukrainian sole proprietors (ФОП) on the simplified tax system,
 groups 1 to 3. You record when and how much money came in; the app works out
 the single tax, the military levy and the social contribution (ЄСВ), and shows
