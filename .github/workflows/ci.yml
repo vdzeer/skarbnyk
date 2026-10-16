@@ -3,8 +3,12 @@ name: CI
 on:
   push:
   pull_request:
+  # Runs the checks and, on main, the deploy again (README, "Deploy from
+  # GitHub Actions").
+  workflow_dispatch:
 
-# Read-only token: the jobs only check out, install and test. No secrets.
+# Read-only token: the check jobs only check out, install and test. Only the
+# deploy job asks for more (an OIDC token for Google Cloud). No secrets.
 # Actions are pinned to commit SHAs; the comment names the release.
 permissions:
   contents: read
@@ -70,3 +74,85 @@ jobs:
       - name: Rules unit tests
         run: npm test
         working-directory: rules-tests
+
+  # Deploys the rules and the site after both check jobs pass, on main only.
+  # Skipped until the repository variables are set, and in forks. There is no
+  # stored key: the job proves to Google Cloud that it is this repository's
+  # main branch with a short-lived OIDC token (Workload Identity Federation).
+  deploy:
+    name: Deploy to Firebase
+    needs: [app, rules]
+    if: >-
+      github.ref == 'refs/heads/main'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://${{ vars.FIREBASE_PROJECT_ID }}.web.app
+    # One deploy at a time; a newer push waits instead of racing the older one.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            rules-tests/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The Firebase CLI comes from this lockfile, not from npx.
+      - name: Install the Firebase CLI
+        run: npm ci
+        working-directory: rules-tests
+
+      # The web app config is public (every visitor's browser gets it), so it
+      # lives in repository variables rather than secrets. The build reads the
+      # process env before any .env file.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_FIREBASE_API_KEY: ${{ vars.FIREBASE_API_KEY }}
+          NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${{ vars.FIREBASE_PROJECT_ID }}.firebaseapp.com
+          NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          NEXT_PUBLIC_FIREBASE_APP_ID: ${{ vars.FIREBASE_APP_ID }}
+          NEXT_PUBLIC_USE_EMULATORS: '0'
+          NEXT_PUBLIC_EMAIL_REMINDERS: ${{ vars.EMAIL_REMINDERS || '0' }}
+          NEXT_PUBLIC_APPCHECK_SITE_KEY: ${{ vars.APPCHECK_SITE_KEY }}
+
+      # Short-lived credentials for the deploy service account, picked up by
+      # the CLI as Application Default Credentials. The file is written outside
+      # out/, so hosting never uploads it.
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3.0.0
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Check the deploy (dry run)
+        run: >-
+          rules-tests/node_modules/.bin/firebase deploy --only firestore:rules,hosting
+          --dry-run --non-interactive --project "$PROJECT"
+        env:
+          PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+
+      # One command for both; the order between them does not matter, the
+      # site works with both the old and the new rules.
+      - name: Deploy rules and site
+        run: >-
+          rules-tests/node_modules/.bin/firebase deploy --only firestore:rules,hosting
+          --non-interactive --project "$PROJECT" --message "$GITHUB_SHA"
+        env:
+          PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}

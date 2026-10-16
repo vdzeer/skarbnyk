@@ -213,6 +213,51 @@ Each App Check token costs one reCAPTCHA assessment, and reCAPTCHA bills
 beyond a free monthly allowance; a longer token lifetime in the provider
 settings means fewer assessments. Check the current reCAPTCHA pricing.
 
+### Optional: deploy from GitHub Actions
+
+The `deploy` job in `.github/workflows/ci.yml` deploys the rules and the site
+after the checks pass on `main`. It stores no key: GitHub's OIDC token is
+exchanged for short-lived credentials of a deploy service account through
+Workload Identity Federation, and only `main` of your repository, in the
+`production` environment, can get them. Until the variables below are set the
+job is skipped.
+
+One-time setup with the Google Cloud CLI (`PROJECT` is your project id,
+`REPO_ID` the numeric id of your GitHub repository, from
+`https://api.github.com/repos/<owner>/<repo>`):
+
+```sh
+PROJECT=<project-id>
+REPO_ID=<repository id>
+SA=github-deploy@$PROJECT.iam.gserviceaccount.com
+NUMBER=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+
+gcloud services enable iamcredentials.googleapis.com sts.googleapis.com --project $PROJECT
+gcloud iam service-accounts create github-deploy --display-name="GitHub Actions deploy" --project $PROJECT
+for role in roles/firebasehosting.admin roles/firebaserules.admin roles/serviceusage.serviceUsageConsumer; do
+  gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA" --role=$role --condition=None
+done
+gcloud iam workload-identity-pools create github --location=global --display-name="GitHub Actions" --project $PROJECT
+gcloud iam workload-identity-pools providers create-oidc main-deploy --location=global \
+  --workload-identity-pool=github --issuer-uri=https://token.actions.githubusercontent.com \
+  --attribute-mapping="google.subject=assertion.sub,attribute.repository_id=assertion.repository_id" \
+  --attribute-condition="assertion.repository_id == '$REPO_ID' && assertion.ref == 'refs/heads/main' && assertion.environment == 'production'" \
+  --project $PROJECT
+gcloud iam service-accounts add-iam-policy-binding $SA --role=roles/iam.workloadIdentityUser \
+  --member="principalSet://iam.googleapis.com/projects/$NUMBER/locations/global/workloadIdentityPools/github/attribute.repository_id/$REPO_ID" \
+  --project $PROJECT
+echo "GCP_WORKLOAD_IDENTITY_PROVIDER=projects/$NUMBER/locations/global/workloadIdentityPools/github/providers/main-deploy"
+echo "GCP_SERVICE_ACCOUNT=$SA"
+```
+
+Then, in the repository's Settings → Secrets and variables → Actions →
+Variables, add `GCP_WORKLOAD_IDENTITY_PROVIDER` and `GCP_SERVICE_ACCOUNT` (the
+two lines printed above), `FIREBASE_PROJECT_ID`, `FIREBASE_API_KEY` and
+`FIREBASE_APP_ID` (from `firebase apps:sdkconfig WEB`). These are public
+identifiers, not secrets. `EMAIL_REMINDERS` and `APPCHECK_SITE_KEY` are
+optional, as in `.env.example`. Settings → Environments → `production` can
+also require your approval before each deploy.
+
 ## Local development
 
 The app can run entirely against the Firebase emulators under a `demo-`
